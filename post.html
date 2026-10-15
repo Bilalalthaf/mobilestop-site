@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Post to TikTok</title>
+<style>
+:root{--bg:#f6f6f7;--card:#fff;--ink:#161823;--muted:#6b6d76;--line:#e3e3e6;--accent:#fe2c55;--ok:#0a8a4a;--warn:#b54708}
+@media (prefers-color-scheme:dark){:root{--bg:#121212;--card:#1d1d20;--ink:#ececef;--muted:#a0a2ab;--line:#33343a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:560px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+h1{font-size:20px;margin:4px 0 12px}h2{font-size:15px;margin:0 0 8px}
+.who{display:flex;align-items:center;gap:10px}.who img{width:44px;height:44px;border-radius:50%;background:var(--line)}
+.muted{color:var(--muted);font-size:14px}video{width:100%;max-height:60vh;border-radius:10px;background:#000}
+textarea,select{width:100%;font:inherit;color:inherit;background:transparent;border:1px solid var(--line);border-radius:10px;padding:10px}
+textarea{min-height:110px;resize:vertical}
+label.row{display:flex;align-items:center;gap:10px;padding:6px 0}label.row input{width:20px;height:20px}
+.disabled{opacity:.45}.note{font-size:14px;padding:8px 10px;border-radius:8px;background:rgba(254,44,85,.08);margin-top:8px}
+button{width:100%;font:inherit;font-weight:600;color:#fff;background:var(--accent);border:0;border-radius:12px;padding:14px;cursor:pointer}
+button:disabled{opacity:.4;cursor:not-allowed}a{color:var(--accent)}
+.status{font-weight:600}.ok{color:var(--ok)}.err{color:var(--accent)}.warn{color:var(--warn)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Post to TikTok</h1>
+  <div id="loading" class="card muted">Loading…</div>
+  <div id="app" hidden>
+    <div class="card who"><img id="avatar" alt=""><div><strong id="nick"></strong><div class="muted" id="uname"></div></div></div>
+    <div class="card"><h2>Preview</h2><video id="video" controls playsinline preload="metadata"></video>
+      <div id="durWarn" class="note" hidden></div></div>
+    <div class="card"><h2>Caption</h2><textarea id="title" maxlength="2200"></textarea>
+      <div class="muted"><span id="count">0</span>/2200</div></div>
+    <div class="card"><h2>Who can view this video</h2>
+      <select id="privacy"><option value="" selected disabled>Select…</option></select>
+      <div id="privNote" class="muted" hidden>Branded content visibility can't be set to private.</div></div>
+    <div class="card"><h2>Allow users to</h2>
+      <label class="row" id="rowComment"><input type="checkbox" id="comment"> Comment</label>
+      <label class="row" id="rowDuet"><input type="checkbox" id="duet"> Duet</label>
+      <label class="row" id="rowStitch"><input type="checkbox" id="stitch"> Stitch</label></div>
+    <div class="card"><h2>Disclose video content</h2>
+      <label class="row"><input type="checkbox" id="disclose"> This video promotes a brand, product or service</label>
+      <div id="discloseOpts" hidden>
+        <label class="row"><input type="checkbox" id="yourBrand"> Your brand — you are promoting yourself or your own business</label>
+        <label class="row"><input type="checkbox" id="branded"> Branded content — you are promoting another brand or a third party</label>
+        <div id="discloseNote" class="note"></div>
+      </div></div>
+    <div class="card">
+      <p class="muted" id="consent"></p>
+      <button id="post" disabled>Post</button>
+      <p id="status" class="status" aria-live="polite"></p>
+    </div>
+  </div>
+</main>
+<script>
+const q = new URLSearchParams(location.search);
+const API = q.get('api'), ID = q.get('id'), T = q.get('t');
+const $ = id => document.getElementById(id);
+const qs = () => `id=${encodeURIComponent(ID)}&t=${encodeURIComponent(T)}`;
+const LABELS = {PUBLIC_TO_EVERYONE:'Everyone', MUTUAL_FOLLOW_FRIENDS:'Friends', FOLLOWER_OF_CREATOR:'Followers', SELF_ONLY:'Only me'};
+const MUSIC = '<a href="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en" target="_blank" rel="noopener">Music Usage Confirmation</a>';
+const BC = '<a href="https://www.tiktok.com/legal/page/global/bc-policy/en" target="_blank" rel="noopener">Branded Content Policy</a>';
+let creator = null, tooLong = false;
+
+function fail(msg){ $('loading').hidden = false; $('loading').className = 'card err'; $('loading').textContent = msg; }
+
+function refresh(){
+  const disclose = $('disclose').checked, yb = $('yourBrand').checked, bc = $('branded').checked;
+  $('discloseOpts').hidden = !disclose;
+  const selfOpt = [...$('privacy').options].find(o => o.value === 'SELF_ONLY');
+  if (selfOpt) { selfOpt.disabled = disclose && bc; if (selfOpt.disabled && $('privacy').value === 'SELF_ONLY') $('privacy').value = ''; }
+  $('privNote').hidden = !(disclose && bc);
+  $('discloseNote').textContent = !disclose ? '' : bc ? "Your video will be labeled as 'Paid partnership'."
+    : yb ? "Your video will be labeled as 'Promotional content'." : 'Choose at least one option.';
+  $('consent').innerHTML = disclose && bc ? `By posting, you agree to TikTok's ${BC} and ${MUSIC}.` : `By posting, you agree to TikTok's ${MUSIC}.`;
+  $('count').textContent = $('title').value.length;
+  $('post').disabled = !$('privacy').value || (disclose && !yb && !bc) || tooLong || $('post').dataset.busy === '1';
+}
+
+async function load(){
+  if (!API || !ID || !T) return fail('This link is incomplete.');
+  let r;
+  try { r = await fetch(`${API}/api/job?${qs()}`); } catch (e) { return fail('Could not reach the MobileStop server. Try again in a minute.'); }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) return fail(d.error || 'This link has expired.');
+  creator = d.creator;
+  $('avatar').src = creator.avatar || ''; $('nick').textContent = creator.nickname || '';
+  $('uname').textContent = 'Posting to @' + (creator.username || d.job.username);
+  $('title').value = d.job.caption || '';
+  for (const p of creator.privacy_options) { const o = document.createElement('option'); o.value = p; o.textContent = LABELS[p] || p; $('privacy').append(o); }
+  for (const [k, row] of [['comment','rowComment'],['duet','rowDuet'],['stitch','rowStitch']]) {
+    if (creator[k + '_disabled']) { $(k).disabled = true; $(row).classList.add('disabled'); $(row).title = 'Turned off in your TikTok settings'; }
+  }
+  $('video').src = `${API}/api/video?${qs()}`;
+  $('video').addEventListener('loadedmetadata', () => {
+    tooLong = creator.max_duration && $('video').duration > creator.max_duration;
+    $('durWarn').hidden = !tooLong;
+    $('durWarn').textContent = `This video is longer than the ${creator.max_duration}s this account can post.`;
+    refresh();
+  });
+  if (d.job.state === 'posted' || d.job.state === 'posting') showState(d.job);
+  $('loading').hidden = true; $('app').hidden = false; refresh();
+}
+
+function showState(job){
+  const s = $('status');
+  if (job.state === 'posted') { s.className = 'status ok'; s.textContent = 'Posted ✓ It is now on your TikTok profile.'; $('post').dataset.busy = '1'; }
+  else if (job.state === 'posting') { s.className = 'status warn'; s.textContent = 'Posting… it can take a few minutes for your video to appear on your profile.'; $('post').dataset.busy = '1'; setTimeout(poll, 4000); }
+  else if (job.state === 'failed') { s.className = 'status err'; s.textContent = 'TikTok rejected the post: ' + (job.error || 'unknown error'); $('post').dataset.busy = '0'; }
+  refresh();
+}
+
+async function poll(){
+  const r = await fetch(`${API}/api/status?${qs()}`); const d = await r.json().catch(() => ({}));
+  if (d.job) showState(d.job);
+}
+
+$('post').addEventListener('click', async () => {
+  $('post').dataset.busy = '1'; refresh();
+  $('status').className = 'status warn'; $('status').textContent = 'Uploading to TikTok…';
+  const body = {title: $('title').value, privacy_level: $('privacy').value,
+    allow_comment: $('comment').checked, allow_duet: $('duet').checked, allow_stitch: $('stitch').checked,
+    brand_organic_toggle: $('disclose').checked && $('yourBrand').checked, brand_content_toggle: $('disclose').checked && $('branded').checked};
+  const r = await fetch(`${API}/api/post?${qs()}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { $('post').dataset.busy = '0'; $('status').className = 'status err'; $('status').textContent = d.error || 'Something went wrong.'; return refresh(); }
+  showState(d.job);
+});
+for (const id of ['privacy','disclose','yourBrand','branded','title']) $(id).addEventListener('input', refresh);
+for (const id of ['privacy','disclose','yourBrand','branded']) $(id).addEventListener('change', refresh);
+load();
+</script>
+</body>
+</html>
