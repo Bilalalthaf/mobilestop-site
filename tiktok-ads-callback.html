@@ -6,6 +6,6 @@ footer{margin-top:40px;font-size:14px;color:#555;border-top:1px solid #ddd;paddi
 const q=new URLSearchParams(location.search), c=q.get('auth_code')||q.get('code');
 const h=document.getElementById('h'), m=document.getElementById('msg');
 if (!c) { h.textContent='Not connected'; m.textContent='No authorisation code in this link. Please try the authorisation link again.'; }
-else { h.textContent='Almost done'; m.textContent='TikTok approved access to the MobileStop ad account. Copy this whole page address and send it to Claude (it is valid for about 1 hour):';
+else { h.textContent='Almost done'; m.textContent='TikTok approved access for MobileStop Ads Manager. Copy this whole page address and send it to Claude (it is valid for about 1 hour):';
   document.getElementById('code').innerHTML='<code>'+location.href.replace(/</g,'&lt;')+'</code>'; }
 </script><footer>MobileStop · 162/1, 1st Cross Street, Colombo 11, Sri Lanka · Hotline 077 734 9834 · mobilestopcolombo@gmail.com<br><a href="index.html">Home</a> · <a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Service</a></footer></body></html>
